@@ -1,0 +1,19 @@
+[package]
+name = "mouseless"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+core-graphics = "0.23.2"
+core-foundation = "0.9.3"
+cocoa = "0.25.0"
+objc = "0.2"
+raw-window-handle = "0.6"
+
+# egui and eframe for GUI
+eframe = "0.27.2" # Or latest version
+mouse-rs = "0.4"
+
+[build-dependencies]
+# If we need to do any macOS specific build steps, e.g. bundling, later
+# cc = "1.0"

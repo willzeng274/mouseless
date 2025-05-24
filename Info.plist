@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>mouseless</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.yourcompany.mouseless</string>
+    <key>CFBundleName</key>
+    <string>Mouseless</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024 Your Name. All rights reserved.</string>
+    <key>NSAccessibilityRequested</key>
+    <true/>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Mouseless needs to control your computer to enable keyboard-based clicking.</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
+</dict>
+</plist> 
