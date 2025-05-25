@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::time::{Instant, Duration};
 use std::sync::mpsc::Receiver;
 
-use eframe::{egui};
+use eframe::egui;
 use core_graphics::event::{CGEventType, CGEventTapLocation, CGMouseButton, CGEvent};
 use core_graphics::geometry::CGPoint;
 use core_graphics::event_source::CGEventSourceStateID;
@@ -13,12 +13,12 @@ use objc::{msg_send, sel, sel_impl};
 use objc::runtime::Object;
 
 #[cfg(target_os = "macos")]
-use cocoa::appkit::{NSWindowCollectionBehavior, NSWindowStyleMask};
+use objc2_app_kit::{NSWindowCollectionBehavior, NSWindowStyleMask};
 #[cfg(target_os = "macos")]
 const NSNONACTIVATING_PANEL_MASK: u64 = 1 << 7;
 
 use crate::grid::{self, MAIN_GRID_COLS, MAIN_GRID_ROWS, SUB_GRID_COLS, SUB_GRID_ROWS};
-use crate::event_handler::{GlobalEvent};
+use crate::event_handler::{GlobalEvent, RCMD_DOUBLE_TAP_MAX_DELAY_MS};
 
 #[derive(Clone)]
 pub struct EframeControl {
@@ -50,10 +50,17 @@ fn key_to_char(key: egui::Key, _modifiers: egui::Modifiers) -> Option<char> {
     }
 }
 
+#[derive(Clone)]
+struct PendingRCmdTapInfo {
+    tap_time: Instant,
+    cursor_pos: Option<egui::Pos2>,
+}
+
 pub struct MouselessApp {
     display_mode: grid::DisplayMode,
     key_input_buffer: String,
     selected_main_cell_index: Option<usize>,
+    previewed_first_char: Option<char>,
     main_grid_labels: Vec<String>,
     main_grid_rects: Vec<egui::Rect>,
     sub_grid_labels: Vec<String>,
@@ -61,7 +68,7 @@ pub struct MouselessApp {
     last_layout_screen_rect: egui::Rect,
     mouse_handler: Mouse,
     eframe_control: EframeControl,
-    _initial_target_rect: egui::Rect, // Kept for future use
+    _initial_target_rect: egui::Rect,
     initial_focus_requested: bool,
     #[cfg(target_os = "macos")]
     macos_panel_properties_set: bool,
@@ -70,6 +77,7 @@ pub struct MouselessApp {
     is_hiding_to_perform_click: bool,
     hide_initiated_at: Option<Instant>,
     pending_click_pos_after_hide: Option<egui::Pos2>,
+    pending_rcmd_single_tap: Option<PendingRCmdTapInfo>,
 }
 
 impl MouselessApp {
@@ -90,6 +98,7 @@ impl MouselessApp {
             display_mode: grid::DisplayMode::MainGrid,
             key_input_buffer: String::new(),
             selected_main_cell_index: None,
+            previewed_first_char: None,
             main_grid_labels: labels,
             main_grid_rects: Vec::new(),
             sub_grid_labels: Vec::new(),
@@ -106,6 +115,7 @@ impl MouselessApp {
             is_hiding_to_perform_click: false,
             hide_initiated_at: None,
             pending_click_pos_after_hide: None,
+            pending_rcmd_single_tap: None,
         };
 
         let mut style = (*cc.egui_ctx.style()).clone();
@@ -145,22 +155,64 @@ impl MouselessApp {
 
 impl eframe::App for MouselessApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) { 
-        if let Ok(event) = self.event_rx.try_recv() {
+        while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                GlobalEvent::ShowGrid(_cursor_pos_opt) => {
-                    if !self.eframe_control.is_visible.load(AtomicOrdering::SeqCst) {
-                        println!("Showing grid");
-                        self.eframe_control.is_visible.store(true, AtomicOrdering::SeqCst);
-                        self.eframe_control.hide_requested.store(false, AtomicOrdering::SeqCst);
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus); 
-                        self.initial_focus_requested = true;
-                        self.key_input_buffer.clear();
-                        self.selected_main_cell_index = None;
-                        self.display_mode = grid::DisplayMode::MainGrid;
-                        self.main_grid_rects.clear();
+                GlobalEvent::PotentialSingleRCmdTap { tap_time, cursor_pos } => {
+                    println!("App received PotentialSingleRCmdTap");
+                    self.pending_rcmd_single_tap = Some(PendingRCmdTapInfo { tap_time, cursor_pos });
+                    
+                    ctx.request_repaint_after(Duration::from_millis(50)); 
+                }
+                GlobalEvent::RCmdDoubleTap => {
+                    println!("App received RCmdDoubleTap");
+                    self.pending_rcmd_single_tap = None; 
+                    // TODO: Implement actual double-tap specific action if needed beyond hiding
+                    println!("RCmd Double Tap action! (currently hides if visible)");
+                    if self.eframe_control.is_visible.load(AtomicOrdering::SeqCst) {
+                        self.eframe_control.hide_requested.store(true, AtomicOrdering::SeqCst);
                     }
                 }
+                GlobalEvent::CancelPendingRCmdTap => {
+                    println!("App received CancelPendingRCmdTap");
+                    self.pending_rcmd_single_tap = None;
+                }
+            }
+        }
+
+        if let Some(pending_tap_info) = &self.pending_rcmd_single_tap {
+            let single_tap_threshold = Duration::from_millis(RCMD_DOUBLE_TAP_MAX_DELAY_MS as u64 + 30); 
+            if pending_tap_info.tap_time.elapsed() >= single_tap_threshold {
+                println!("Pending RCmd tap timed out. Executing as single tap.");
+                let cursor_pos_opt = pending_tap_info.cursor_pos;
+                self.pending_rcmd_single_tap = None; 
+
+                if !self.eframe_control.is_visible.load(AtomicOrdering::SeqCst) {
+                    println!("Single RCmd tap action: showing grid");
+                    
+                    self.eframe_control.is_visible.store(true, AtomicOrdering::SeqCst);
+                    self.eframe_control.hide_requested.store(false, AtomicOrdering::SeqCst);
+                    if let Some(cursor_pos) = cursor_pos_opt {
+                        println!("Setting OuterPosition near cursor at {:?}", cursor_pos);
+                        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(cursor_pos));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true)); 
+                    } else {
+                        println!("No cursor position provided, ensuring maximized on default monitor.");
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+                    }
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus); 
+                    self.initial_focus_requested = true;
+                    self.key_input_buffer.clear();
+                    self.selected_main_cell_index = None;
+                    self.previewed_first_char = None;
+                    self.display_mode = grid::DisplayMode::MainGrid;
+                    self.main_grid_rects.clear();
+                } else {
+                    println!("Single RCmd tap action: app was already visible, hiding instead (or other toggle logic).");
+                    self.eframe_control.hide_requested.store(true, AtomicOrdering::SeqCst);
+                }
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(50)); 
             }
         }
 
@@ -173,6 +225,7 @@ impl eframe::App for MouselessApp {
                 self.eframe_control.hide_requested.store(false, AtomicOrdering::SeqCst);
                 self.key_input_buffer.clear();
                 self.selected_main_cell_index = None;
+                self.previewed_first_char = None;
                 self.display_mode = grid::DisplayMode::MainGrid;
                 println!("Hide initiated");
                 self.is_hiding_to_perform_click = self.pending_click_pos_after_hide.is_some();
@@ -189,6 +242,7 @@ impl eframe::App for MouselessApp {
                  }
                  self.is_hiding_to_perform_click = false;
                  self.hide_initiated_at = None;
+                 self.previewed_first_char = None;
             }
         }
 
@@ -260,6 +314,7 @@ impl eframe::App for MouselessApp {
                     self.is_hiding_to_perform_click = false;
                     self.hide_initiated_at = None;
                     self.pending_click_pos_after_hide = None;
+                    self.previewed_first_char = None;
                     self.key_input_buffer.clear();
                     self.selected_main_cell_index = None;
                     self.display_mode = grid::DisplayMode::MainGrid;
@@ -271,6 +326,7 @@ impl eframe::App for MouselessApp {
             } else { 
                 self.is_hiding_to_perform_click = false;
                 self.pending_click_pos_after_hide = None;
+                self.previewed_first_char = None;
                 self.eframe_control.hide_requested.store(false, AtomicOrdering::SeqCst);
             }
         }
@@ -290,12 +346,12 @@ impl eframe::App for MouselessApp {
                             let window_ptr: *mut Object = msg_send![view_ptr, window];
                             if !window_ptr.is_null() {
                                 let collection_behavior = 
-                                    NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces |
-                                    NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary |
-                                    NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary;
+                                    NSWindowCollectionBehavior::CanJoinAllSpaces |
+                                    NSWindowCollectionBehavior::FullScreenAuxiliary |
+                                    NSWindowCollectionBehavior::Stationary;
                                 let _: () = msg_send![window_ptr, setCollectionBehavior: collection_behavior];
                                 let current_style_mask: NSWindowStyleMask = msg_send![window_ptr, styleMask];
-                                let new_style_mask = current_style_mask.bits() | NSNONACTIVATING_PANEL_MASK;
+                                let new_style_mask = current_style_mask.bits() | NSNONACTIVATING_PANEL_MASK as usize;
                                 let _: () = msg_send![window_ptr, setStyleMask: NSWindowStyleMask::from_bits_truncate(new_style_mask)];
                                 println!("Configured window as non-activating panel");
                                 self.macos_panel_properties_set = true;
@@ -337,7 +393,15 @@ impl eframe::App for MouselessApp {
                 if let egui::Event::Key { key, pressed: true, .. } = event {
                     if let Some(char_code) = key_to_char(key, Default::default()) {
                         self.key_input_buffer.push(char_code);
-                        if self.key_input_buffer.len() == 2 {
+                        if self.key_input_buffer.len() == 1 {
+                            if self.main_grid_labels.iter().any(|lab| lab.starts_with(char_code)) {
+                                self.previewed_first_char = Some(char_code);
+                            } else {
+                                self.key_input_buffer.clear();
+                                self.previewed_first_char = None;
+                            }
+                        } else if self.key_input_buffer.len() == 2 {
+                            self.previewed_first_char = None;
                             if let Some(index) = self.main_grid_labels.iter().position(|label| *label == self.key_input_buffer) {
                                 self.selected_main_cell_index = Some(index);
                                 self.display_mode = grid::DisplayMode::SubGrid;
@@ -350,12 +414,19 @@ impl eframe::App for MouselessApp {
                                         self.sub_grid_rects = sg_rects;
                                     } else { self.display_mode = grid::DisplayMode::MainGrid;}
                                  } else { self.display_mode = grid::DisplayMode::MainGrid;}
-                            } else { self.key_input_buffer.clear(); }
+                            } else {
+                                self.key_input_buffer.clear();
+                                self.previewed_first_char = None;
+                            }
+                        } else if key == egui::Key::Escape {
+                            self.key_input_buffer.clear();
+                            self.previewed_first_char = None;
                         }
                     }
                 }
             }
         } else if self.display_mode == grid::DisplayMode::SubGrid {
+            self.previewed_first_char = None;
             let events = ctx.input(|i| i.events.clone());
             for event in events {
                 if let egui::Event::Key { key, pressed: true, .. } = event {
@@ -386,13 +457,21 @@ impl eframe::App for MouselessApp {
                 let main_cell_bg_color = egui::Color32::from_rgba_unmultiplied(50, 50, 50, 120); 
                 let line_stroke = egui::Stroke::new(0.5, egui::Color32::from_rgba_unmultiplied(200, 200, 200, 100)); 
                 let text_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 200); 
+                let preview_highlight_color = egui::Color32::from_rgba_unmultiplied(80, 120, 80, 150);
 
                 if !self.main_grid_rects.is_empty() {
                     for (index, rect) in self.main_grid_rects.iter().enumerate() {
-                        let bg_color = if self.display_mode == grid::DisplayMode::SubGrid && Some(index) != self.selected_main_cell_index {
-                            egui::Color32::from_rgba_unmultiplied(30, 30, 30, 70) 
-                        } else { main_cell_bg_color };
-                        painter.rect_filled(*rect, 0.0, bg_color);
+                        let mut current_bg_color = main_cell_bg_color;
+                        if self.display_mode == grid::DisplayMode::SubGrid && Some(index) != self.selected_main_cell_index {
+                            current_bg_color = egui::Color32::from_rgba_unmultiplied(30, 30, 30, 70);
+                        } else if self.display_mode == grid::DisplayMode::MainGrid {
+                            if let Some(preview_char) = self.previewed_first_char {
+                                if index < self.main_grid_labels.len() && self.main_grid_labels[index].starts_with(preview_char) {
+                                    current_bg_color = preview_highlight_color;
+                                }
+                            }
+                        }
+                        painter.rect_filled(*rect, 0.0, current_bg_color);
                         painter.rect_stroke(*rect, 0.0, line_stroke);
                         if index < self.main_grid_labels.len() {
                             let cell_center = rect.center();

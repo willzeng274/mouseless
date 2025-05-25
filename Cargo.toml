@@ -1,19 +1,17 @@
 [package]
 name = "mouseless"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-core-graphics = "0.23.2"
-core-foundation = "0.9.3"
-cocoa = "0.25.0"
-objc = "0.2"
-raw-window-handle = "0.6"
+core-graphics = "0.24.0"
+core-foundation = "0.10.0"
+cocoa = "0.26.1"
+objc = "0.2.7"
+raw-window-handle = "0.6.2"
+display-info = "0.5.4"
+objc2-app-kit="0.3.1"
 
-# egui and eframe for GUI
-eframe = "0.27.2" # Or latest version
-mouse-rs = "0.4"
-
-[build-dependencies]
-# If we need to do any macOS specific build steps, e.g. bundling, later
-# cc = "1.0"
+eframe = "0.30.0"
+mouse-rs = "0.4.2"
+winit = "0.30.11"

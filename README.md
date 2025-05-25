@@ -66,7 +66,7 @@ While the app can run without code signing for personal use, macOS Gatekeeper mi
     *   Press `⌘ + Space` to open Spotlight, type `Keychain Access`, and press Enter.
 
 2.  **Create a New Certificate:**
-    *   In Keychain Access, go to **Keychain Access > Certificate Assistant > Create a Certificate...**
+    *   In Keychain Access, go to **Keychain Access > Certificate Assistant > Create a Certificate...** (should be in menubar)
     *   **Name:** Choose a descriptive name, e.g., `MouselessLocalSign` or `My Mac Developer`.
     *   **Identity Type:** Select **Self-Signed Root**.
     *   **Certificate Type:** Select **Code Signing**.
@@ -97,7 +97,7 @@ While the app can run without code signing for personal use, macOS Gatekeeper mi
 7.  **Sign the Application Binary:**
     *   After building with `cargo build --release`, use the following command in your terminal, replacing `"MouselessLocalSign"` with the exact name of the certificate you created:
         ```bash
-        codesign --force --deep --sign "MouselessLocalSign" ./target/release/mouseless
+        codesign --force --deep --sign "MouselessLocalSign" ./target/release/Mouseless.app # or mouseless, whatever binary/app name you have
         ```
 
 8.  **Verify Signature (Optional):**

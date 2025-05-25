@@ -14,7 +14,7 @@ use eframe::NativeOptions;
 use objc::{msg_send, sel, sel_impl, class}; 
 use objc::runtime::Object;
 #[cfg(target_os = "macos")]
-use cocoa::appkit::NSApplicationActivationPolicy;
+use objc2_app_kit::NSApplicationActivationPolicy;
 
 use app_ui::{MouselessApp, EframeControl};
 use event_handler::{global_event_listener_thread, EventTapSharedState, GlobalEvent};
@@ -45,7 +45,7 @@ fn main() -> Result<(), String> {
             .with_transparent(true)
             .with_decorations(false)
             .with_always_on_top()
-            .with_maximized(true) 
+            .with_maximized(true)
             .with_visible(false) 
             .with_title("Mouseless Overlay"),
         ..Default::default()
@@ -63,10 +63,10 @@ fn main() -> Result<(), String> {
             unsafe {
                 let ns_app_class = class!(NSApplication);
                 let ns_app: *mut Object = msg_send![ns_app_class, sharedApplication];
-                let _: () = msg_send![ns_app, setActivationPolicy: NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory];
+                let _: () = msg_send![ns_app, setActivationPolicy: NSApplicationActivationPolicy::Accessory];
                 println!("Set app as accessory (won't appear in dock)");
             }
-            Box::new(MouselessApp::new(cc, eframe_control_clone_for_app, placeholder_initial_rect, event_rx, lshift_arc_clone_for_app))
+            Ok(Box::new(MouselessApp::new(cc, eframe_control_clone_for_app, placeholder_initial_rect, event_rx, lshift_arc_clone_for_app)))
         }),
     );
 

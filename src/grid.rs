@@ -12,26 +12,21 @@ pub enum DisplayMode {
 }
 
 pub fn generate_main_grid_layout(num_cols: usize, num_rows: usize, screen_rect: egui::Rect) -> (Vec<String>, Vec<egui::Rect>) {
-    let mut labels = Vec::new();
-    let first_chars = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', 'Z', 'X', 'C', 'V', 'B', 'N', 'M'];
-    let second_chars = ['H', 'J', 'K', 'L', 'Q', 'W', 'E', 'R', 'T', 'Y', 'A', 'S', 'D', 'F', 'G', 'U', 'I', 'O', 'P', 'Z', 'X', 'C', 'V', 'B', 'N', 'M'];
+    let mut labels = Vec::with_capacity(num_rows * num_cols);
+    let first_chars = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Q', 'W', 'E'];
+    let second_chars = ['H', 'J', 'K', 'L', 'Q', 'W', 'E', 'R', 'T', 'Y', 'A', 'S'];
+
+    assert!(num_rows <= first_chars.len(), "Not enough unique first characters for the number of rows.");
+    assert!(num_cols <= second_chars.len(), "Not enough unique second characters for the number of columns.");
+
     for r in 0..num_rows {
         for c in 0..num_cols {
-            let idx = r * num_cols + c;
-            if idx < first_chars.len() && idx < second_chars.len() {
-                let char1 = first_chars[r % first_chars.len()];
-                let char2 = second_chars[c % second_chars.len()];
-                if labels.len() < num_rows * num_cols {
-                    labels.push(format!("{}{}", char1, char2));
-                }
-            } else {
-                if labels.len() < num_rows * num_cols {
-                     labels.push(format!("{}{}", (65 + (idx % 26)) as u8 as char, (65 + ((idx / 26) % 26)) as u8 as char));
-                }
-            }
+            let char1 = first_chars[r];
+            let char2 = second_chars[c];
+            labels.push(format!("{}{}", char1, char2));
         }
     }
-    labels.truncate(num_rows * num_cols);
+
     let mut rects = Vec::with_capacity(num_rows * num_cols);
     if screen_rect.width() > 1.0 && screen_rect.height() > 1.0 {
         let cell_width = screen_rect.width() / num_cols as f32;
