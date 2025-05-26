@@ -46,7 +46,8 @@ fn main() -> Result<(), String> {
             .with_decorations(false)
             .with_always_on_top()
             .with_maximized(true)
-            .with_visible(false) 
+            .with_visible(false)
+            // .with_mouse_passthrough(true) // uncomment this if the overlay is bugging
             .with_title("Mouseless Overlay"),
         ..Default::default()
     };
